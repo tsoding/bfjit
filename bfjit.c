@@ -1,0 +1,348 @@
+#include <stdio.h>
+#include <stdint.h>
+
+#include <sys/mman.h>
+
+#define NOB_IMPLEMENTATION
+#include "nob.h"
+
+typedef enum {
+    OP_INC             = '+',
+    OP_DEC             = '-',
+    OP_LEFT            = '<',
+    OP_RIGHT           = '>',
+    OP_OUTPUT          = '.',
+    OP_INPUT           = ',',
+    OP_JUMP_IF_ZERO    = '[',
+    OP_JUMP_IF_NONZERO = ']',
+} Op_Kind;
+
+typedef struct {
+    Op_Kind kind;
+    size_t operand;
+} Op;
+
+typedef struct {
+    Op *items;
+    size_t count;
+    size_t capacity;
+} Ops;
+
+typedef struct {
+    Nob_String_View content;
+    size_t pos;
+} Lexer;
+
+bool is_bf_cmd(char ch)
+{
+    const char *cmds = "+-<>,.[]";
+    return strchr(cmds, ch) != NULL;
+}
+
+char lexer_next(Lexer *l)
+{
+    while (l->pos < l->content.count && !is_bf_cmd(l->content.data[l->pos])) {
+        l->pos += 1;
+    }
+    if (l->pos >= l->content.count) return 0;
+    return l->content.data[l->pos++];
+}
+
+typedef struct {
+    size_t *items;
+    size_t count;
+    size_t capacity;
+} Addrs;
+
+typedef struct {
+    char *items;
+    size_t count;
+    size_t capacity;
+} Memory;
+
+bool interpret(Ops ops)
+{
+    bool result = true;
+    Memory memory = {0};
+    nob_da_append(&memory, 0);
+    size_t head = 0;
+    size_t ip = 0;
+    while (ip < ops.count) {
+        Op op = ops.items[ip];
+        switch (op.kind) {
+            case OP_INC: {
+                memory.items[head] += op.operand;
+                ip += 1;
+            } break;
+
+            case OP_DEC: {
+                memory.items[head] -= op.operand;
+                ip += 1;
+            } break;
+
+            case OP_LEFT: {
+                if (head < op.operand) {
+                    printf("RUNTIME ERROR: Memory underflow");
+                    nob_return_defer(false);
+                }
+                head -= op.operand;
+                ip += 1;
+            } break;
+
+            case OP_RIGHT: {
+                head += op.operand;
+                while (head >= memory.count) {
+                    nob_da_append(&memory, 0);
+                }
+                ip += 1;
+            } break;
+
+            case OP_INPUT: {
+                assert(0 && "TODO: input is not implemented");
+            } break;
+
+            case OP_OUTPUT: {
+                for (size_t i = 0; i < op.operand; ++i) {
+                    printf("%c", memory.items[head]);
+                }
+                ip += 1;
+            } break;
+
+            case OP_JUMP_IF_ZERO: {
+                if (memory.items[head] == 0) {
+                    ip = op.operand;
+                } else {
+                    ip += 1;
+                }
+            } break;
+
+            case OP_JUMP_IF_NONZERO: {
+                if (memory.items[head] != 0) {
+                    ip = op.operand;
+                } else {
+                    ip += 1;
+                }
+            } break;
+        }
+    }
+
+defer:
+    free(memory.items);
+    return result;
+}
+
+typedef void(*code_t)(void *memory);
+
+typedef struct {
+    size_t operand_byte_addr;
+    size_t src_byte_addr;
+    size_t dst_op_index;
+} Backpatch;
+
+typedef struct {
+    Backpatch *items;
+    size_t count;
+    size_t capacity;
+} Backpatches;
+
+typedef struct {
+} Addresses;
+
+code_t jit_compile(Ops ops)
+{
+    Nob_String_Builder sb = {0};
+    Backpatches backpatches = {0};
+    Addrs addrs = {0};
+    for (size_t i = 0; i < ops.count; ++i) {
+        Op op = ops.items[i];
+        nob_da_append(&addrs, sb.count);
+        switch (op.kind) {
+            case OP_INC: {
+                assert(op.operand < 256 && "TODO: support bigger operands");
+                nob_sb_append_cstr(&sb, "\x80\x07"); // add byte[rdi],
+                nob_da_append(&sb, op.operand&0xFF);
+            } break;
+
+            case OP_DEC: {
+                assert(op.operand < 256 && "TODO: support bigger operands");
+                nob_sb_append_cstr(&sb, "\x80\x2f"); // sub byte[rdi],
+                nob_da_append(&sb, op.operand&0xFF);
+            } break;
+
+            case OP_LEFT: {
+                nob_sb_append_cstr(&sb, "\x48\x81\xef"); // sub rdi,
+                uint32_t operand = (uint32_t)op.operand;
+                nob_da_append_many(&sb, &operand, sizeof(operand));
+            } break;
+
+            case OP_RIGHT: {
+                nob_sb_append_cstr(&sb, "\x48\x81\xc7"); // add rdi,
+                uint32_t operand = (uint32_t)op.operand;
+                nob_da_append_many(&sb, &operand, sizeof(operand));
+            } break;
+
+            case OP_OUTPUT: {
+                for (size_t i = 0; i < op.operand; ++i) {
+                    nob_sb_append_cstr(&sb, "\x57");                            // push rdi
+                    nob_da_append_many(&sb, "\x48\xc7\xc0\x01\x00\x00\x00", 7); // mov rax, 1
+                    nob_sb_append_cstr(&sb, "\x48\x89\xfe");                    // mov rsi, rdi
+                    nob_da_append_many(&sb, "\x48\xc7\xc7\x01\x00\x00\x00", 7); // mov rdi, 1
+                    nob_da_append_many(&sb, "\x48\xc7\xc2\x01\x00\x00\x00", 7); // mov rdx, 1
+                    nob_sb_append_cstr(&sb, "\x0f\x05");                        // syscall
+                    nob_sb_append_cstr(&sb, "\x5f");                            // pop rdi
+                }
+            } break;
+
+            case OP_INPUT: {
+                assert(0 && "TODO: OP_INPUT");
+            } break;
+
+            case OP_JUMP_IF_ZERO: {
+                nob_sb_append_cstr(&sb, "\x48\x31\xc0"); // xor rax, rax
+                nob_sb_append_cstr(&sb, "\x8a\x07");     // mov al, byte [rdi]
+                nob_sb_append_cstr(&sb, "\x48\x85\xc0"); // test rax, rax
+                nob_sb_append_cstr(&sb, "\x0f\x84");     // jz
+                size_t operand_byte_addr = sb.count;
+                nob_da_append_many(&sb, "\x00\x00\x00\x00", 4);
+                size_t src_byte_addr = sb.count;
+
+                Backpatch bp = {
+                    .operand_byte_addr = operand_byte_addr,
+                    .src_byte_addr = src_byte_addr,
+                    .dst_op_index = op.operand,
+                };
+
+                nob_da_append(&backpatches, bp);
+            } break;
+
+            case OP_JUMP_IF_NONZERO: {
+                nob_sb_append_cstr(&sb, "\x48\x31\xc0"); // xor rax, rax
+                nob_sb_append_cstr(&sb, "\x8a\x07");     // mov al, byte [rdi]
+                nob_sb_append_cstr(&sb, "\x48\x85\xc0"); // test rax, rax
+                nob_sb_append_cstr(&sb, "\x0f\x85");     // jnz
+                size_t operand_byte_addr = sb.count;
+                nob_da_append_many(&sb, "\x00\x00\x00\x00", 4);
+                size_t src_byte_addr = sb.count;
+
+                Backpatch bp = {
+                    .operand_byte_addr = operand_byte_addr,
+                    .src_byte_addr = src_byte_addr,
+                    .dst_op_index = op.operand,
+                };
+
+                nob_da_append(&backpatches, bp);
+            } break;
+
+            default: assert(0 && "Unreachable");
+        }
+    }
+    nob_da_append(&addrs, sb.count);
+
+    for (size_t i = 0; i < backpatches.count; ++i) {
+        Backpatch bp = backpatches.items[i];
+        int32_t src_addr = bp.src_byte_addr;
+        int32_t dst_addr = addrs.items[bp.dst_op_index];
+        int32_t operand = dst_addr - src_addr;
+        memcpy(&sb.items[bp.operand_byte_addr], &operand, sizeof(operand));
+    }
+
+    nob_sb_append_cstr(&sb, "\xC3");
+
+    void *code = mmap(NULL, sb.count, PROT_EXEC | PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (code == MAP_FAILED) {
+        nob_log(NOB_ERROR, "Could not allocate executable memory: %s", strerror(errno));
+        return NULL;
+    }
+
+    memcpy(code, sb.items, sb.count);
+    free(sb.items);
+    return code;
+}
+
+int main(int argc, char **argv)
+{
+    const char *program = nob_shift_args(&argc, &argv);
+
+    if (argc <= 0) {
+        nob_log(NOB_ERROR, "Usage: %s <input.bf>", program);
+        nob_log(NOB_ERROR, "No input is provided");
+        return 1;
+    }
+
+    const char *file_path = nob_shift_args(&argc, &argv);
+    Nob_String_Builder sb = {0};
+    if (!nob_read_entire_file(file_path, &sb)) return 1;
+
+    Lexer l = {
+        .content = {
+            .data = sb.items,
+            .count = sb.count,
+        },
+    };
+    Ops ops = {0};
+    Addrs stack = {0};
+    char c = lexer_next(&l);
+    while (c) {
+        switch (c) {
+            case '.':
+            case ',':
+            case '<':
+            case '>':
+            case '-':
+            case '+': {
+                size_t count = 1;
+                char s = lexer_next(&l);
+                while (s == c) {
+                    count += 1;
+                    s = lexer_next(&l);
+                }
+                Op op = {
+                    .kind = c,
+                    .operand = count,
+                };
+                nob_da_append(&ops, op);
+                c = s;
+            } break;
+
+            case '[': {
+                size_t addr = ops.count;
+                Op op = {
+                    .kind = c,
+                    .operand = 0,
+                };
+                nob_da_append(&ops, op);
+                nob_da_append(&stack, addr);
+
+                c = lexer_next(&l);
+            } break;
+
+            case ']': {
+                if (stack.count == 0) {
+                    printf("%s [%zu]: ERROR: Unbalanced loop\n", file_path, l.pos);
+                    return 1;
+                }
+
+                size_t addr = stack.items[--stack.count];
+                Op op = {
+                    .kind = c,
+                    .operand = addr + 1,
+                };
+                nob_da_append(&ops, op);
+                ops.items[addr].operand = ops.count;
+
+                c = lexer_next(&l);
+            } break;
+
+            default: {}
+        }
+    }
+
+    // if (!interpret(ops)) return 1;
+    code_t code = jit_compile(ops);
+    if (code == NULL) return 1;
+    void *memory = malloc(10*1000*1000);
+    code(memory);
+    free(memory);
+
+    return 0;
+}
