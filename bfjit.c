@@ -362,6 +362,11 @@ defer:
     return result;
 }
 
+void usage(const char *program)
+{
+    nob_log(NOB_ERROR, "Usage: %s [--no-jit] <input.bf>", program);
+}
+
 int main(int argc, char **argv)
 {
     int result = 0;
@@ -371,26 +376,45 @@ int main(int argc, char **argv)
 
     const char *program = nob_shift_args(&argc, &argv);
 
-    // TODO: what if we allowed providing several files and executed them sequencially
-    // preserving the state of the machine between them?
+    bool no_jit = false;
+    const char *file_path = NULL;
 
-    if (argc <= 0) {
-        nob_log(NOB_ERROR, "Usage: %s <input.bf>", program);
+    while (argc > 0) {
+        const char *flag = nob_shift_args(&argc, &argv);
+        if (strcmp(flag, "--no-jit") == 0) {
+            no_jit = true;
+        } else {
+            if (file_path != NULL) {
+                usage(program);
+                // TODO: what if we allowed providing several files and executed them sequencially
+                // preserving the state of the machine between them?
+                nob_log(NOB_ERROR, "Providing several files is not supported");
+                nob_return_defer(1);
+            }
+
+            file_path = flag;
+        }
+    }
+
+    if (file_path == NULL) {
+        usage(program);
         nob_log(NOB_ERROR, "No input is provided");
         nob_return_defer(1);
     }
 
-    const char *file_path = nob_shift_args(&argc, &argv);
     if (!generate_ops(file_path, &ops)) nob_return_defer(1);
 
-    // TODO: switch between interpretation and JIT at runtime via a flag
-
-    // if (!interpret(ops)) nob_return_defer(1);
-    if (!jit_compile(ops, &code)) nob_return_defer(1);
-    memory = malloc(JIT_MEMORY_CAP);
-    memset(memory, 0, JIT_MEMORY_CAP);
-    assert(memory != NULL);
-    code.run(memory);
+    if (no_jit) {
+        nob_log(NOB_INFO, "JIT: off");
+        if (!interpret(ops)) nob_return_defer(1);
+    } else {
+        nob_log(NOB_INFO, "JIT: on");
+        if (!jit_compile(ops, &code)) nob_return_defer(1);
+        memory = malloc(JIT_MEMORY_CAP);
+        memset(memory, 0, JIT_MEMORY_CAP);
+        assert(memory != NULL);
+        code.run(memory);
+    }
 
 defer:
     nob_da_free(ops);
