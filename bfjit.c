@@ -56,19 +56,13 @@ typedef struct {
     size_t capacity;
 } Addrs;
 
-typedef struct {
-    char *items;
-    size_t count;
-    size_t capacity;
-} Memory;
-
 bool interpret(Ops ops)
 {
     bool result = true;
     // TODO: there is a memory management discrepancy between interpretation and JIT.
     // Interpretation automatically extends the memory, but JIT has a fixed size memory (to simplify implementation).
     // This discrepancy should be closed somehow somehow
-    Memory memory = {0};
+    Nob_String_Builder memory = {0};
     nob_da_append(&memory, 0);
     size_t head = 0;
     size_t ip = 0;
