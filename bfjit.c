@@ -437,3 +437,6 @@ defer:
 // TODO: add more interesting examples
 // TODO: optimize pattern [-] to just set the current cell to 0.
 // Probably on the level of IR.
+// TODO: Windows port
+// - [ ] Platform specific mapping of executable memory
+// - [ ] Platform specific stdio from JIT compiled machine code
