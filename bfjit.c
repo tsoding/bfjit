@@ -273,9 +273,16 @@ Code jit_compile(Ops ops)
     return code;
 }
 
-bool generate_ops(const char *file_path, Nob_String_View content, Ops *ops)
+bool generate_ops(const char *file_path, Ops *ops)
 {
-    Lexer l = {.content = content};
+    Nob_String_Builder sb = {0};
+    if (!nob_read_entire_file(file_path, &sb)) return 1;
+    Lexer l = {
+        .content = {
+            .data = sb.items,
+            .count = sb.count,
+        },
+    };
     Addrs stack = {0};
     char c = lexer_next(&l);
     while (c) {
@@ -347,10 +354,8 @@ int main(int argc, char **argv)
     }
 
     const char *file_path = nob_shift_args(&argc, &argv);
-    Nob_String_Builder sb = {0};
-    if (!nob_read_entire_file(file_path, &sb)) return 1;
     Ops ops = {0};
-    if (!generate_ops(file_path, nob_sv_from_parts(sb.items, sb.count), &ops)) return 1;
+    if (!generate_ops(file_path, &ops)) return 1;
 
     // if (!interpret(ops)) return 1;
     Code code = jit_compile(ops);
