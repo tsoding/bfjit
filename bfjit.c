@@ -204,7 +204,15 @@ bool jit_compile(Ops ops, Code *code)
             } break;
 
             case OP_INPUT: {
-                assert(0 && "TODO: OP_INPUT");
+                for (size_t i = 0; i < op.operand; ++i) {
+                    nob_sb_append_cstr(&sb, "\x57");                            // push rdi
+                    nob_da_append_many(&sb, "\x48\xc7\xc0\x00\x00\x00\x00", 7); // mov rax, 0
+                    nob_sb_append_cstr(&sb, "\x48\x89\xfe");                    // mov rsi, rdi
+                    nob_da_append_many(&sb, "\x48\xc7\xc7\x00\x00\x00\x00", 7); // mov rdi, 0
+                    nob_da_append_many(&sb, "\x48\xc7\xc2\x01\x00\x00\x00", 7); // mov rdx, 1
+                    nob_sb_append_cstr(&sb, "\x0f\x05");                        // syscall
+                    nob_sb_append_cstr(&sb, "\x5f");                            // pop rdi
+                }
             } break;
 
             case OP_JUMP_IF_ZERO: {
@@ -350,7 +358,7 @@ bool generate_ops(const char *file_path, Ops *ops)
     }
 
     if (stack.count > 0) {
-        // TODO: report the opening unbalanced bracket
+        // TODO: report the location of opening unbalanced bracket
         printf("%s [%zu]: ERROR: Unbalanced loop\n", file_path, l.pos);
         nob_return_defer(false);
     }
