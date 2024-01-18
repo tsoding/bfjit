@@ -256,27 +256,9 @@ code_t jit_compile(Ops ops)
     return code;
 }
 
-int main(int argc, char **argv)
+bool generate_ops(const char *file_path, Nob_String_View content, Ops *ops)
 {
-    const char *program = nob_shift_args(&argc, &argv);
-
-    if (argc <= 0) {
-        nob_log(NOB_ERROR, "Usage: %s <input.bf>", program);
-        nob_log(NOB_ERROR, "No input is provided");
-        return 1;
-    }
-
-    const char *file_path = nob_shift_args(&argc, &argv);
-    Nob_String_Builder sb = {0};
-    if (!nob_read_entire_file(file_path, &sb)) return 1;
-
-    Lexer l = {
-        .content = {
-            .data = sb.items,
-            .count = sb.count,
-        },
-    };
-    Ops ops = {0};
+    Lexer l = {.content = content};
     Addrs stack = {0};
     char c = lexer_next(&l);
     while (c) {
@@ -297,17 +279,17 @@ int main(int argc, char **argv)
                     .kind = c,
                     .operand = count,
                 };
-                nob_da_append(&ops, op);
+                nob_da_append(ops, op);
                 c = s;
             } break;
 
             case '[': {
-                size_t addr = ops.count;
+                size_t addr = ops->count;
                 Op op = {
                     .kind = c,
                     .operand = 0,
                 };
-                nob_da_append(&ops, op);
+                nob_da_append(ops, op);
                 nob_da_append(&stack, addr);
 
                 c = lexer_next(&l);
@@ -316,7 +298,7 @@ int main(int argc, char **argv)
             case ']': {
                 if (stack.count == 0) {
                     printf("%s [%zu]: ERROR: Unbalanced loop\n", file_path, l.pos);
-                    return 1;
+                    return false;
                 }
 
                 size_t addr = stack.items[--stack.count];
@@ -324,8 +306,8 @@ int main(int argc, char **argv)
                     .kind = c,
                     .operand = addr + 1,
                 };
-                nob_da_append(&ops, op);
-                ops.items[addr].operand = ops.count;
+                nob_da_append(ops, op);
+                ops->items[addr].operand = ops->count;
 
                 c = lexer_next(&l);
             } break;
@@ -333,6 +315,25 @@ int main(int argc, char **argv)
             default: {}
         }
     }
+
+    return true;
+}
+
+int main(int argc, char **argv)
+{
+    const char *program = nob_shift_args(&argc, &argv);
+
+    if (argc <= 0) {
+        nob_log(NOB_ERROR, "Usage: %s <input.bf>", program);
+        nob_log(NOB_ERROR, "No input is provided");
+        return 1;
+    }
+
+    const char *file_path = nob_shift_args(&argc, &argv);
+    Nob_String_Builder sb = {0};
+    if (!nob_read_entire_file(file_path, &sb)) return 1;
+    Ops ops = {0};
+    if (!generate_ops(file_path, nob_sv_from_parts(sb.items, sb.count), &ops)) return 1;
 
     // if (!interpret(ops)) return 1;
     code_t code = jit_compile(ops);
