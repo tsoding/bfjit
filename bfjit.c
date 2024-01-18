@@ -278,15 +278,19 @@ defer:
 
 bool generate_ops(const char *file_path, Ops *ops)
 {
+    bool result = true;
     Nob_String_Builder sb = {0};
-    if (!nob_read_entire_file(file_path, &sb)) return 1;
+    Addrs stack = {0};
+
+    if (!nob_read_entire_file(file_path, &sb)) {
+        nob_return_defer(false);
+    }
     Lexer l = {
         .content = {
             .data = sb.items,
             .count = sb.count,
         },
     };
-    Addrs stack = {0};
     char c = lexer_next(&l);
     while (c) {
         switch (c) {
@@ -324,8 +328,9 @@ bool generate_ops(const char *file_path, Ops *ops)
 
             case ']': {
                 if (stack.count == 0) {
+                    // TODO: reports rows and columns
                     printf("%s [%zu]: ERROR: Unbalanced loop\n", file_path, l.pos);
-                    return false;
+                    nob_return_defer(false);
                 }
 
                 size_t addr = stack.items[--stack.count];
@@ -343,7 +348,20 @@ bool generate_ops(const char *file_path, Ops *ops)
         }
     }
 
-    return true;
+    if (stack.count > 0) {
+        // TODO: report the opening unbalanced bracket
+        printf("%s [%zu]: ERROR: Unbalanced loop\n", file_path, l.pos);
+        nob_return_defer(false);
+    }
+
+defer:
+    if (!result) {
+        nob_da_free(*ops);
+        memset(ops, 0, sizeof(*ops));
+    }
+    nob_da_free(sb);
+    nob_da_free(stack);
+    return result;
 }
 
 int main(int argc, char **argv)
