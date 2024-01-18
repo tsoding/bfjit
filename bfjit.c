@@ -145,9 +145,6 @@ typedef struct {
     size_t capacity;
 } Backpatches;
 
-typedef struct {
-} Addresses;
-
 code_t jit_compile(Ops ops)
 {
     Nob_String_Builder sb = {0};
