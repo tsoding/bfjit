@@ -205,9 +205,8 @@ bool jit_compile(Ops ops, Code *code)
             } break;
 
             case OP_JUMP_IF_ZERO: {
-                nob_sb_append_cstr(&sb, "\x48\x31\xc0"); // xor rax, rax
                 nob_sb_append_cstr(&sb, "\x8a\x07");     // mov al, byte [rdi]
-                nob_sb_append_cstr(&sb, "\x48\x85\xc0"); // test rax, rax
+                nob_sb_append_cstr(&sb, "\x84\xc0");     // test al, al
                 nob_sb_append_cstr(&sb, "\x0f\x84");     // jz
                 size_t operand_byte_addr = sb.count;
                 nob_da_append_many(&sb, "\x00\x00\x00\x00", 4);
@@ -223,9 +222,8 @@ bool jit_compile(Ops ops, Code *code)
             } break;
 
             case OP_JUMP_IF_NONZERO: {
-                nob_sb_append_cstr(&sb, "\x48\x31\xc0"); // xor rax, rax
                 nob_sb_append_cstr(&sb, "\x8a\x07");     // mov al, byte [rdi]
-                nob_sb_append_cstr(&sb, "\x48\x85\xc0"); // test rax, rax
+                nob_sb_append_cstr(&sb, "\x84\xc0");     // test al, al
                 nob_sb_append_cstr(&sb, "\x0f\x85");     // jnz
                 size_t operand_byte_addr = sb.count;
                 nob_da_append_many(&sb, "\x00\x00\x00\x00", 4);
