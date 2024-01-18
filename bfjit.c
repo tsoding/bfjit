@@ -97,12 +97,15 @@ bool interpret(Ops ops)
             } break;
 
             case OP_INPUT: {
-                assert(0 && "TODO: input is not implemented for interpretation");
+                for (size_t i = 0; i < op.operand; ++i) {
+                    fread(&memory.items[head], 1, 1, stdin);
+                }
+                ip += 1;
             } break;
 
             case OP_OUTPUT: {
                 for (size_t i = 0; i < op.operand; ++i) {
-                    printf("%c", memory.items[head]);
+                    fwrite(&memory.items[head], 1, 1, stdout);
                 }
                 ip += 1;
             } break;
