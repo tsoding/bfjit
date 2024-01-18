@@ -127,7 +127,7 @@ bool interpret(Ops ops)
     }
 
 defer:
-    free(memory.items);
+    nob_da_free(memory);
     return result;
 }
 
@@ -135,11 +135,6 @@ typedef struct {
     void (*run)(void *memory);
     size_t len;
 } Code;
-
-bool is_valid_code(Code code)
-{
-    return code.run != NULL;
-}
 
 void free_code(Code code)
 {
@@ -158,11 +153,13 @@ typedef struct {
     size_t capacity;
 } Backpatches;
 
-Code jit_compile(Ops ops)
+bool jit_compile(Ops ops, Code *code)
 {
+    bool result = true;
     Nob_String_Builder sb = {0};
     Backpatches backpatches = {0};
     Addrs addrs = {0};
+
     for (size_t i = 0; i < ops.count; ++i) {
         Op op = ops.items[i];
         nob_da_append(&addrs, sb.count);
@@ -258,19 +255,25 @@ Code jit_compile(Ops ops)
 
     nob_sb_append_cstr(&sb, "\xC3");
 
-    Code code = {0};
-    code.run = mmap(NULL, sb.count, PROT_EXEC | PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (code.run == MAP_FAILED) {
-        code.run = NULL;
+    code->len = sb.count;
+    code->run = mmap(NULL, sb.count, PROT_EXEC | PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (code->run == MAP_FAILED) {
         nob_log(NOB_ERROR, "Could not allocate executable memory: %s", strerror(errno));
-    } else {
-        // TODO: switch the permission to only-exec after finishing copying the code. See mprotect(2).
-        memcpy(code.run, sb.items, sb.count);
-        code.len = sb.count;
+        nob_return_defer(false);
     }
 
-    free(sb.items);
-    return code;
+    // TODO: switch the permissions to only-exec after finishing copying the code. See mprotect(2).
+    memcpy(code->run, sb.items, code->len);
+
+defer:
+    if (!result) {
+        free_code(*code);
+        memset(code, 0, sizeof(*code));
+    }
+    nob_da_free(sb);
+    nob_da_free(backpatches);
+    nob_da_free(addrs);
+    return result;
 }
 
 bool generate_ops(const char *file_path, Ops *ops)
@@ -358,8 +361,8 @@ int main(int argc, char **argv)
     if (!generate_ops(file_path, &ops)) return 1;
 
     // if (!interpret(ops)) return 1;
-    Code code = jit_compile(ops);
-    if (!is_valid_code(code)) return 1;
+    Code code = {0};
+    if (!jit_compile(ops, &code)) return 1;
     void *memory = malloc(10*1000*1000);
     code.run(memory);
     free(memory);
