@@ -6,6 +6,8 @@
 #define NOB_IMPLEMENTATION
 #include "nob.h"
 
+#define JIT_MEMORY_CAP (10*1000*1000)
+
 typedef enum {
     OP_INC             = '+',
     OP_DEC             = '-',
@@ -63,6 +65,9 @@ typedef struct {
 bool interpret(Ops ops)
 {
     bool result = true;
+    // TODO: there is a memory management discrepancy between interpretation and JIT.
+    // Interpretation automatically extends the memory, but JIT has a fixed size memory (to simplify implementation).
+    // This discrepancy should be closed somehow somehow
     Memory memory = {0};
     nob_da_append(&memory, 0);
     size_t head = 0;
@@ -98,7 +103,7 @@ bool interpret(Ops ops)
             } break;
 
             case OP_INPUT: {
-                assert(0 && "TODO: input is not implemented");
+                assert(0 && "TODO: input is not implemented for interpretation");
             } break;
 
             case OP_OUTPUT: {
@@ -176,6 +181,7 @@ bool jit_compile(Ops ops, Code *code)
                 nob_da_append(&sb, op.operand&0xFF);
             } break;
 
+            // TODO: range checks
             case OP_LEFT: {
                 nob_sb_append_cstr(&sb, "\x48\x81\xef"); // sub rdi,
                 uint32_t operand = (uint32_t)op.operand;
@@ -366,25 +372,32 @@ defer:
 
 int main(int argc, char **argv)
 {
+    int result = 0;
+    Ops ops = {0};
+    Code code = {0};
+    void *memory = NULL;
+
     const char *program = nob_shift_args(&argc, &argv);
 
     if (argc <= 0) {
         nob_log(NOB_ERROR, "Usage: %s <input.bf>", program);
         nob_log(NOB_ERROR, "No input is provided");
-        return 1;
+        nob_return_defer(1);
     }
 
     const char *file_path = nob_shift_args(&argc, &argv);
-    Ops ops = {0};
-    if (!generate_ops(file_path, &ops)) return 1;
+    if (!generate_ops(file_path, &ops)) nob_return_defer(1);
 
-    // if (!interpret(ops)) return 1;
-    Code code = {0};
-    if (!jit_compile(ops, &code)) return 1;
-    void *memory = malloc(10*1000*1000);
+    // if (!interpret(ops)) nob_return_defer(1);
+    if (!jit_compile(ops, &code)) nob_return_defer(1);
+    memory = malloc(JIT_MEMORY_CAP);
+    memset(memory, 0, JIT_MEMORY_CAP);
+    assert(memory != NULL);
     code.run(memory);
-    free(memory);
-    free_code(code);
 
-    return 0;
+defer:
+    nob_da_free(ops);
+    free_code(code);
+    free(memory);
+    return result;
 }
