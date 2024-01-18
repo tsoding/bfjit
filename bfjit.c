@@ -131,7 +131,20 @@ defer:
     return result;
 }
 
-typedef void(*code_t)(void *memory);
+typedef struct {
+    void (*run)(void *memory);
+    size_t len;
+} Code;
+
+bool is_valid_code(Code code)
+{
+    return code.run != NULL;
+}
+
+void free_code(Code code)
+{
+    munmap(code.run, code.len);
+}
 
 typedef struct {
     size_t operand_byte_addr;
@@ -145,7 +158,7 @@ typedef struct {
     size_t capacity;
 } Backpatches;
 
-code_t jit_compile(Ops ops)
+Code jit_compile(Ops ops)
 {
     Nob_String_Builder sb = {0};
     Backpatches backpatches = {0};
@@ -245,13 +258,17 @@ code_t jit_compile(Ops ops)
 
     nob_sb_append_cstr(&sb, "\xC3");
 
-    void *code = mmap(NULL, sb.count, PROT_EXEC | PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (code == MAP_FAILED) {
+    Code code = {0};
+    code.run = mmap(NULL, sb.count, PROT_EXEC | PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (code.run == MAP_FAILED) {
+        code.run = NULL;
         nob_log(NOB_ERROR, "Could not allocate executable memory: %s", strerror(errno));
-        return NULL;
+    } else {
+        // TODO: switch the permission to only-exec after finishing copying the code. See mprotect(2).
+        memcpy(code.run, sb.items, sb.count);
+        code.len = sb.count;
     }
 
-    memcpy(code, sb.items, sb.count);
     free(sb.items);
     return code;
 }
@@ -336,11 +353,12 @@ int main(int argc, char **argv)
     if (!generate_ops(file_path, nob_sv_from_parts(sb.items, sb.count), &ops)) return 1;
 
     // if (!interpret(ops)) return 1;
-    code_t code = jit_compile(ops);
-    if (code == NULL) return 1;
+    Code code = jit_compile(ops);
+    if (!is_valid_code(code)) return 1;
     void *memory = malloc(10*1000*1000);
-    code(memory);
+    code.run(memory);
     free(memory);
+    free_code(code);
 
     return 0;
 }
