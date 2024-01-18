@@ -373,6 +373,9 @@ int main(int argc, char **argv)
 
     const char *program = nob_shift_args(&argc, &argv);
 
+    // TODO: what if we allowed providing several files and executed them sequencially
+    // preserving the state of the machine between them?
+
     if (argc <= 0) {
         nob_log(NOB_ERROR, "Usage: %s <input.bf>", program);
         nob_log(NOB_ERROR, "No input is provided");
@@ -381,6 +384,8 @@ int main(int argc, char **argv)
 
     const char *file_path = nob_shift_args(&argc, &argv);
     if (!generate_ops(file_path, &ops)) nob_return_defer(1);
+
+    // TODO: switch between interpretation and JIT at runtime via a flag
 
     // if (!interpret(ops)) nob_return_defer(1);
     if (!jit_compile(ops, &code)) nob_return_defer(1);
@@ -395,3 +400,7 @@ defer:
     free(memory);
     return result;
 }
+
+// TODO: add more interesting examples
+// TODO: optimize pattern [-] to just set the current cell to 0.
+// Probably on the level of IR.
