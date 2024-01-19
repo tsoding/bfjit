@@ -3,7 +3,6 @@
 ## Quick Start
 
 ```console
-$ cc -o nob nob.c
-$ ./nob
+$ cc -o bfjit bfjit.c
 $ ./bfjit ./examples/hello.bf
 ```
