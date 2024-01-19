@@ -178,7 +178,7 @@ bool jit_compile(Ops ops, Code *code)
                 nob_da_append(&sb, op.operand&0xFF);
             } break;
 
-            // TODO: range checks
+            // TODO: range checks for OP_LEFT and OP_RIGHT
             case OP_LEFT: {
                 nob_sb_append_cstr(&sb, "\x48\x81\xef"); // sub rdi,
                 uint32_t operand = (uint32_t)op.operand;
@@ -397,8 +397,8 @@ int main(int argc, char **argv)
         } else {
             if (file_path != NULL) {
                 usage(program);
-                // TODO: what if we allowed providing several files and executed them sequencially
-                // preserving the state of the machine between them?
+                // TODO(multifile): what if we allowed providing several files and executed them sequencially
+                // preserving the state of the machine between them? Maybe complicated by TODO(dead).
                 nob_log(NOB_ERROR, "Providing several files is not supported");
                 nob_return_defer(1);
             }
@@ -434,9 +434,14 @@ defer:
     return result;
 }
 
-// TODO: add more interesting examples
-// TODO: optimize pattern [-] to just set the current cell to 0.
-// Probably on the level of IR.
-// TODO: Windows port
-// - [ ] Platform specific mapping of executable memory
-// - [ ] Platform specific stdio from JIT compiled machine code
+// TODO: Add more interesting examples.
+//   Check https://brainfuck.org/ for inspiration
+// TODO(dead): Dead code eliminate first loop which traditionally used as a comment.
+//   May not work well if we start sequencially executing several files,
+//   because consequent files may not start from the zero state.
+//   See TODO(multifile).
+// TODO: Optimize pattern [-] to just set the current cell to 0.
+//   Probably on the level of IR.
+// TODO: Windows port.
+//   - [ ] Platform specific mapping of executable memory
+//   - [ ] Platform specific stdio from JIT compiled machine code
