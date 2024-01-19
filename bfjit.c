@@ -1,12 +1,25 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#include <string.h>
 #include <sys/mman.h>
 
 #define NOB_IMPLEMENTATION
 #include "nob.h"
 
 #define JIT_MEMORY_CAP (10*1000*1000)
+#define GENERATE_OPTIMIZATIONS true
+
+typedef enum {
+    TOK_INC             = '+',
+    TOK_DEC             = '-',
+    TOK_LEFT            = '<',
+    TOK_RIGHT           = '>',
+    TOK_OUTPUT          = '.',
+    TOK_INPUT           = ',',
+    TOK_JUMP_IF_ZERO    = '[',
+    TOK_JUMP_IF_NONZERO = ']',
+} Token_Kind;
 
 typedef enum {
     OP_INC             = '+',
@@ -17,6 +30,8 @@ typedef enum {
     OP_INPUT           = ',',
     OP_JUMP_IF_ZERO    = '[',
     OP_JUMP_IF_NONZERO = ']',
+    // Special/optimized opcodes
+    OP_ZERO_HEAD       = '\x1',
 } Op_Kind;
 
 typedef struct {
@@ -41,13 +56,34 @@ bool is_bf_cmd(char ch)
     return strchr(cmds, ch) != NULL;
 }
 
-char lexer_next(Lexer *l)
+Token_Kind lexer_next(Lexer *l)
 {
     while (l->pos < l->content.count && !is_bf_cmd(l->content.data[l->pos])) {
         l->pos += 1;
     }
     if (l->pos >= l->content.count) return 0;
     return l->content.data[l->pos++];
+}
+
+
+bool lexer_peek(Lexer *l, Token_Kind *tokens, size_t count)
+{
+    if (l->pos + count >= l->content.count) {
+        return false;
+    }
+
+    size_t og_pos = l->pos;
+    for(size_t i = 0; i < count; ++i) {
+        Token_Kind token = lexer_next(l);
+        if (!token) {
+            l->pos = og_pos;
+            return false;
+        }
+        tokens[i] = token;
+    }
+
+    l->pos = og_pos;
+    return true;
 }
 
 typedef struct {
@@ -124,6 +160,11 @@ bool interpret(Ops ops)
                 } else {
                     ip += 1;
                 }
+            } break;
+
+            case OP_ZERO_HEAD: {
+              memory.items[head] = 0;
+              ip += 1;
             } break;
         }
     }
@@ -248,6 +289,10 @@ bool jit_compile(Ops ops, Code *code)
 
                 nob_da_append(&backpatches, bp);
             } break;
+            
+            case OP_ZERO_HEAD: {
+                nob_da_append_many(&sb, "\xc6\x07\x00", 3); // mov byte [rdi], 0 
+            } break;
 
             default: assert(0 && "Unreachable");
         }
@@ -285,6 +330,28 @@ defer:
     return result;
 }
 
+bool try_generate_optimized_op(Token_Kind current, Lexer *l, Ops *ops) {
+    Token_Kind tokens[3] = { current };
+    if (lexer_peek(l, tokens + 1, 2)) {
+        if (tokens[0] == TOK_JUMP_IF_ZERO &&
+            tokens[1] == TOK_DEC          &&
+            tokens[2] == TOK_JUMP_IF_NONZERO
+        ) {
+            lexer_next(l);
+            lexer_next(l);
+
+            Op op = {
+                .kind = OP_ZERO_HEAD,
+                .operand = 0,
+            };
+            nob_da_append(ops, op);
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 bool generate_ops(const char *file_path, Ops *ops)
 {
     bool result = true;
@@ -300,33 +367,38 @@ bool generate_ops(const char *file_path, Ops *ops)
             .count = sb.count,
         },
     };
-    char c = lexer_next(&l);
+    Token_Kind c = lexer_next(&l);
     while (c) {
+        if (GENERATE_OPTIMIZATIONS && try_generate_optimized_op(c, &l, ops)) {
+            c = lexer_next(&l);
+            continue;
+        }
+
         switch (c) {
-            case '.':
-            case ',':
-            case '<':
-            case '>':
-            case '-':
-            case '+': {
+            case TOK_OUTPUT:
+            case TOK_INPUT:
+            case TOK_LEFT:
+            case TOK_RIGHT:
+            case TOK_DEC:
+            case TOK_INC: {
                 size_t count = 1;
-                char s = lexer_next(&l);
+                Token_Kind s = lexer_next(&l);
                 while (s == c) {
                     count += 1;
                     s = lexer_next(&l);
                 }
                 Op op = {
-                    .kind = c,
+                    .kind = (Op_Kind)c,
                     .operand = count,
                 };
                 nob_da_append(ops, op);
                 c = s;
             } break;
 
-            case '[': {
+            case TOK_JUMP_IF_ZERO: {
                 size_t addr = ops->count;
                 Op op = {
-                    .kind = c,
+                    .kind = (Op_Kind)c,
                     .operand = 0,
                 };
                 nob_da_append(ops, op);
@@ -335,7 +407,7 @@ bool generate_ops(const char *file_path, Ops *ops)
                 c = lexer_next(&l);
             } break;
 
-            case ']': {
+            case TOK_JUMP_IF_NONZERO: {
                 if (stack.count == 0) {
                     // TODO: reports rows and columns
                     printf("%s [%zu]: ERROR: Unbalanced loop\n", file_path, l.pos);
@@ -344,7 +416,7 @@ bool generate_ops(const char *file_path, Ops *ops)
 
                 size_t addr = stack.items[--stack.count];
                 Op op = {
-                    .kind = c,
+                    .kind = (Op_Kind)c,
                     .operand = addr + 1,
                 };
                 nob_da_append(ops, op);
