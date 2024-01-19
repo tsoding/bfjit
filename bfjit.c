@@ -59,9 +59,6 @@ typedef struct {
 bool interpret(Ops ops)
 {
     bool result = true;
-    // TODO: there is a memory management discrepancy between interpretation and JIT.
-    // Interpretation automatically extends the memory, but JIT has a fixed size memory (to simplify implementation).
-    // This discrepancy should be closed somehow
     Nob_String_Builder memory = {0};
     nob_da_append(&memory, 0);
     size_t head = 0;
