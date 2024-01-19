@@ -330,7 +330,8 @@ defer:
     return result;
 }
 
-bool try_generate_optimized_op(Token_Kind current, Lexer *l, Ops *ops) {
+bool try_generate_optimized_op(Token_Kind current, Lexer *l, Ops *ops)
+{
     Token_Kind tokens[3] = { current };
     if (lexer_peek(l, tokens + 1, 2)) {
         if (tokens[0] == TOK_JUMP_IF_ZERO &&
