@@ -6,7 +6,7 @@
 #define NOB_IMPLEMENTATION
 #include "nob.h"
 
-#define JIT_MEMORY_CAP (10*1000*1000)
+#define JIT_MEMORY_CAP 1000
 
 typedef enum {
     OP_INC             = '+',
