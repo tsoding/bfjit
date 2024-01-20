@@ -43,22 +43,29 @@ bool is_bf_cmd(char ch)
     return strchr(cmds, ch) != NULL;
 }
 
+void lexer_advance_character(Lexer *l)
+{
+    if (l->content.data[l->pos] == '\n') {
+        l->line += 1;
+        l->col = 1;
+    } else {
+        l->col += 1;
+    }
+
+    l->pos += 1;
+}
+
 char lexer_next(Lexer *l)
 {
     while (l->pos < l->content.count && !is_bf_cmd(l->content.data[l->pos])) {
-        if (l->content.data[l->pos] == '\n') {
-            l->line += 1;
-            l->col = 1;
-        } else {
-            l->col += 1;
-        }
-
-        l->pos += 1;
+        lexer_advance_character(l);
     }
 
     if (l->pos >= l->content.count) return 0;
 
-    return l->content.data[l->pos++];
+    char current = l->content.data[l->pos];
+    lexer_advance_character(l);
+    return current;
 }
 
 typedef struct {
