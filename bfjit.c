@@ -6,7 +6,7 @@
 #define NOB_IMPLEMENTATION
 #include "nob.h"
 
-#define JIT_MEMORY_CAP (10*1000*1000)
+#define JIT_MEMORY_CAP 1000
 
 typedef enum {
     OP_INC             = '+',
@@ -59,9 +59,6 @@ typedef struct {
 bool interpret(Ops ops)
 {
     bool result = true;
-    // TODO: there is a memory management discrepancy between interpretation and JIT.
-    // Interpretation automatically extends the memory, but JIT has a fixed size memory (to simplify implementation).
-    // This discrepancy should be closed somehow
     Nob_String_Builder memory = {0};
     nob_da_append(&memory, 0);
     size_t head = 0;
@@ -133,8 +130,15 @@ defer:
     return result;
 }
 
+struct JitMemoryData {
+  char *(*update_buffer)(char *memory, struct JitMemoryData *memory_data);
+  char *items;
+  size_t count;
+  size_t capacity;
+};
+
 typedef struct {
-    void (*run)(void *memory);
+    void (*run)(void *memory, struct JitMemoryData *memory_data);
     size_t len;
 } Code;
 
@@ -155,12 +159,24 @@ typedef struct {
     size_t capacity;
 } Backpatches;
 
+char *jit_update_buffer(char *ip, struct JitMemoryData *memory_data) {
+  size_t current_idx = ip - memory_data->items;
+  while (current_idx >= memory_data->count) {
+    nob_da_append(memory_data, 0);
+    ip = memory_data->items + current_idx;
+  }
+  return ip;
+}
+
 bool jit_compile(Ops ops, Code *code)
 {
     bool result = true;
     Nob_String_Builder sb = {0};
     Backpatches backpatches = {0};
     Addrs addrs = {0};
+    
+    // Move ptr to JitMemoryData to a mostly unused register
+    nob_sb_append_cstr(&sb, "\x49\x89\xf0"); // mov r8, rsi
 
     for (size_t i = 0; i < ops.count; ++i) {
         Op op = ops.items[i];
@@ -187,8 +203,15 @@ bool jit_compile(Ops ops, Code *code)
 
             case OP_RIGHT: {
                 nob_sb_append_cstr(&sb, "\x48\x81\xc7"); // add rdi,
+
                 uint32_t operand = (uint32_t)op.operand;
                 nob_da_append_many(&sb, &operand, sizeof(operand));
+                
+                nob_sb_append_cstr(&sb, "\x41\x50");     // push r8          -- Save JitMemoryData, so it can be restored later
+                nob_sb_append_cstr(&sb, "\x4c\x89\xc6"); // mov rsi, r8      -- Set second argument of func call to JitMemoryData
+                nob_sb_append_cstr(&sb, "\xff\x16");     // call qword [rsi] -- First member of JitMemoryData is func ptr
+                nob_sb_append_cstr(&sb, "\x48\x89\xc7"); // mov rdi, rax     -- Set head to result of previous call
+                nob_sb_append_cstr(&sb, "\x41\x58");     // pop r8           -- Restore r8 if it was modified
             } break;
 
             case OP_OUTPUT: {
@@ -383,7 +406,7 @@ int main(int argc, char **argv)
     int result = 0;
     Ops ops = {0};
     Code code = {0};
-    void *memory = NULL;
+    struct JitMemoryData memory_info = {0};
 
     const char *program = nob_shift_args(&argc, &argv);
 
@@ -421,16 +444,22 @@ int main(int argc, char **argv)
     } else {
         nob_log(NOB_INFO, "JIT: on");
         if (!jit_compile(ops, &code)) nob_return_defer(1);
-        memory = malloc(JIT_MEMORY_CAP);
+        
+        memory_info.items = malloc(JIT_MEMORY_CAP);
+        memory_info.capacity = JIT_MEMORY_CAP;
+        memory_info.count = JIT_MEMORY_CAP;
+        memory_info.update_buffer = jit_update_buffer;
+
+        void *memory = memory_info.items;
         memset(memory, 0, JIT_MEMORY_CAP);
         assert(memory != NULL);
-        code.run(memory);
+        code.run(memory, &memory_info);
     }
 
 defer:
     nob_da_free(ops);
     free_code(code);
-    free(memory);
+    free(memory_info.items);
     return result;
 }
 
