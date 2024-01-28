@@ -956,7 +956,7 @@ bool nob_rename(const char *old_path, const char *new_path)
 bool nob_read_entire_file(const char *path, Nob_String_Builder *sb)
 {
     bool result = true;
-#if 1
+
     FILE *f = fopen(path, "rb");
     if (f == NULL)                 nob_return_defer(false);
     if (fseek(f, 0, SEEK_END) < 0) nob_return_defer(false);
@@ -967,42 +967,21 @@ bool nob_read_entire_file(const char *path, Nob_String_Builder *sb)
     size_t new_count = sb->count + m;
     if (new_count > sb->capacity) {
         sb->items = realloc(sb->items, new_count);
+        NOB_ASSERT(sb->items != NULL && "Buy more RAM lool!!");
         sb->capacity = new_count;
     }
 
     fread(sb->items + sb->count, m, 1, f);
-    if (ferror(f)) nob_return_defer(false);
+    if (ferror(f)) {
+        // TODO: Afaik, ferror does not set errno. So the error reporting in defer is not correct in this case.
+        nob_return_defer(false);
+    }
     sb->count = new_count;
 
 defer:
     if (!result) nob_log(NOB_ERROR, "Could not read file %s: %s", path, strerror(errno));
     if (f) fclose(f);
     return result;
-#else
-    size_t buf_size = 32*1024;
-    char *buf = NOB_REALLOC(NULL, buf_size);
-    NOB_ASSERT(buf != NULL && "Buy more RAM lool!!");
-    FILE *f = fopen(path, "rb");
-    if (f == NULL) {
-        nob_log(NOB_ERROR, "Could not open %s for reading: %s", path, strerror(errno));
-        nob_return_defer(false);
-    }
-
-    size_t n = fread(buf, 1, buf_size, f);
-    while (n > 0) {
-        nob_sb_append_buf(sb, buf, n);
-        n = fread(buf, 1, buf_size, f);
-    }
-    if (ferror(f)) {
-        nob_log(NOB_ERROR, "Could not read %s: %s\n", path, strerror(errno));
-        nob_return_defer(false);
-    }
-
-defer:
-    NOB_FREE(buf);
-    if (f) fclose(f);
-    return result;
-#endif
 }
 
 Nob_String_View nob_sv_chop_by_delim(Nob_String_View *sv, char delim)
