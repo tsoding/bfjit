@@ -33,6 +33,8 @@ typedef struct {
 typedef struct {
     Nob_String_View content;
     size_t pos;
+    size_t line;
+    size_t col;
 } Lexer;
 
 bool is_bf_cmd(char ch)
@@ -41,13 +43,29 @@ bool is_bf_cmd(char ch)
     return strchr(cmds, ch) != NULL;
 }
 
+void lexer_advance_character(Lexer *l)
+{
+    if (l->content.data[l->pos] == '\n') {
+        l->line += 1;
+        l->col = 1;
+    } else {
+        l->col += 1;
+    }
+
+    l->pos += 1;
+}
+
 char lexer_next(Lexer *l)
 {
     while (l->pos < l->content.count && !is_bf_cmd(l->content.data[l->pos])) {
-        l->pos += 1;
+        lexer_advance_character(l);
     }
+
     if (l->pos >= l->content.count) return 0;
-    return l->content.data[l->pos++];
+
+    char current = l->content.data[l->pos];
+    lexer_advance_character(l);
+    return current;
 }
 
 typedef struct {
@@ -299,6 +317,8 @@ bool generate_ops(const char *file_path, Ops *ops)
             .data = sb.items,
             .count = sb.count,
         },
+        .line = 1,
+        .col = 1,
     };
     char c = lexer_next(&l);
     while (c) {
@@ -337,8 +357,7 @@ bool generate_ops(const char *file_path, Ops *ops)
 
             case ']': {
                 if (stack.count == 0) {
-                    // TODO: reports rows and columns
-                    printf("%s [%zu]: ERROR: Unbalanced loop\n", file_path, l.pos);
+                    printf("%s [%zu, %zu]: ERROR: Unbalanced loop\n", file_path, l.line, l.col);
                     nob_return_defer(false);
                 }
 
@@ -358,8 +377,7 @@ bool generate_ops(const char *file_path, Ops *ops)
     }
 
     if (stack.count > 0) {
-        // TODO: report the location of opening unbalanced bracket
-        printf("%s [%zu]: ERROR: Unbalanced loop\n", file_path, l.pos);
+        printf("%s [%zu, %zu]: ERROR: Unbalanced loop\n", file_path, l.line, l.col);
         nob_return_defer(false);
     }
 
