@@ -195,7 +195,7 @@ bool jit_compile(Ops ops, Code *code)
                 for (size_t i = 0; i < op.operand; ++i) {
                     nob_sb_append_cstr(&sb, "\x57");                            // push rdi
                     #ifdef __APPLE__
-                    nob_da_append_many(&sb, "\x48\xc7\xc0\x04\x00\x00\x02", 7); // mov rax, 1
+                    nob_da_append_many(&sb, "\x48\xc7\xc0\x04\x00\x00\x02", 7); // mov rax, 2000004
                     #else
                     nob_da_append_many(&sb, "\x48\xc7\xc0\x01\x00\x00\x00", 7); // mov rax, 1
                     #endif
@@ -211,7 +211,7 @@ bool jit_compile(Ops ops, Code *code)
                 for (size_t i = 0; i < op.operand; ++i) {
                     nob_sb_append_cstr(&sb, "\x57");                            // push rdi
                     #ifdef __APPLE__
-                    nob_da_append_many(&sb, "\x48\xc7\xc0\x03\x00\x00\x02", 7); // mov rax, 1
+                    nob_da_append_many(&sb, "\x48\xc7\xc0\x03\x00\x00\x02", 7); // mov rax, 2000003
                     #else
                     nob_da_append_many(&sb, "\x48\xc7\xc0\x00\x00\x00\x00", 7); // mov rax, 1
                     #endif
