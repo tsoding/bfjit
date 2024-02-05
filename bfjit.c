@@ -168,60 +168,129 @@ bool jit_compile(Ops ops, Code *code)
         switch (op.kind) {
             case OP_INC: {
                 assert(op.operand < 256 && "TODO: support bigger operands");
+                #ifdef __aarch64__
+                nob_da_append_many(&sb, "\x08\x00\x40\x39", 4); // ldrb w8, [x0]
+                uint32_t add_op = 0x11000108 | (op.operand & 0xFF) << 10;
+                nob_da_append_many(&sb, &add_op, 4); // add w8, w8,
+                nob_da_append_many(&sb, "\x08\x00\x00\x39", 4); // strb w8, [x0]
+                #else
                 nob_sb_append_cstr(&sb, "\x80\x07"); // add byte[rdi],
                 nob_da_append(&sb, op.operand&0xFF);
+                #endif
             } break;
 
             case OP_DEC: {
                 assert(op.operand < 256 && "TODO: support bigger operands");
+                #ifdef __aarch64__
+                nob_da_append_many(&sb, "\x08\x00\x40\x39", 4); // ldrb w8, [x0]
+                uint32_t add_op = 0x51000108 | (op.operand & 0xFF) << 10;
+                nob_da_append_many(&sb, &add_op, 4); // add w8, w8,
+                nob_da_append_many(&sb, "\x08\x00\x00\x39", 4); // strb w8, [x0]
+                #else
                 nob_sb_append_cstr(&sb, "\x80\x2f"); // sub byte[rdi],
                 nob_da_append(&sb, op.operand&0xFF);
+                #endif
             } break;
 
             // TODO: range checks for OP_LEFT and OP_RIGHT
             case OP_LEFT: {
+                #ifdef __aarch64__
+                assert(op.operand < 256 && "TODO: support bigger operands");
+                uint32_t add_op = 0xd1000000 | (op.operand & 0xFF) << 10;
+                nob_da_append_many(&sb, &add_op, 4); // sub x0, x0, 1
+                #else
                 nob_sb_append_cstr(&sb, "\x48\x81\xef"); // sub rdi,
                 uint32_t operand = (uint32_t)op.operand;
                 nob_da_append_many(&sb, &operand, sizeof(operand));
+                #endif
             } break;
 
             case OP_RIGHT: {
+                #ifdef __aarch64__
+                assert(op.operand < 256 && "TODO: support bigger operands");
+                uint32_t add_op = 0x91000000 | (op.operand & 0xFF) << 10;
+                nob_da_append_many(&sb, &add_op, 4); // add x0, x0, 1
+                #else
                 nob_sb_append_cstr(&sb, "\x48\x81\xc7"); // add rdi,
                 uint32_t operand = (uint32_t)op.operand;
                 nob_da_append_many(&sb, &operand, sizeof(operand));
+                #endif
             } break;
 
             case OP_OUTPUT: {
                 for (size_t i = 0; i < op.operand; ++i) {
+                    #ifdef __aarch64__
+                    nob_da_append_many(&sb, "\xe1\x03\x00\xaa", 4); // mov x1, x0
+                    nob_da_append_many(&sb, "\xe4\x03\x00\xaa", 4); // mov x4, x0
+                    nob_da_append_many(&sb, "\x20\x00\x80\xd2", 4); // mov x0, 1
+                    nob_da_append_many(&sb, "\x22\x00\x80\xd2", 4); // mov x2, 1
+                    #ifdef __APPLE__
+                    nob_da_append_many(&sb, "\x90\x00\x80\xd2", 4); // mov x16, 4
+                    #else
+                    nob_da_append_many(&sb, "\x08\x08\x80\xd2", 4); // mov x8, 64
+                    #endif
+                    nob_da_append_many(&sb, "\x01\x00\x00\xd4", 4); // svc 0
+                    nob_da_append_many(&sb, "\xe0\x03\x04\xaa", 4); // mov x0, x4
+                    #else
                     nob_sb_append_cstr(&sb, "\x57");                            // push rdi
+                    #ifdef __APPLE__
+                    nob_da_append_many(&sb, "\x48\xc7\xc0\x04\x00\x00\x02", 7); // mov rax, 2000004
+                    #else
                     nob_da_append_many(&sb, "\x48\xc7\xc0\x01\x00\x00\x00", 7); // mov rax, 1
+                    #endif
                     nob_sb_append_cstr(&sb, "\x48\x89\xfe");                    // mov rsi, rdi
                     nob_da_append_many(&sb, "\x48\xc7\xc7\x01\x00\x00\x00", 7); // mov rdi, 1
                     nob_da_append_many(&sb, "\x48\xc7\xc2\x01\x00\x00\x00", 7); // mov rdx, 1
                     nob_sb_append_cstr(&sb, "\x0f\x05");                        // syscall
                     nob_sb_append_cstr(&sb, "\x5f");                            // pop rdi
+                    #endif
                 }
             } break;
 
             case OP_INPUT: {
                 for (size_t i = 0; i < op.operand; ++i) {
+                    #ifdef __aarch64__
+                    nob_da_append_many(&sb, "\xe1\x03\x00\xaa", 4); // mov x1, x0
+                    nob_da_append_many(&sb, "\xe4\x03\x00\xaa", 4); // mov x4, x0
+                    nob_da_append_many(&sb, "\x20\x00\x80\xd2", 4); // mov x0, 1
+                    nob_da_append_many(&sb, "\x22\x00\x80\xd2", 4); // mov x2, 0
+                    #ifdef __APPLE__
+                    nob_da_append_many(&sb, "\x70\x00\x80\xd2", 4); // mov x16, 3
+                    #else
+                    nob_da_append_many(&sb, "\xe8\x07\x80\xd2", 4); // mov x8, 63
+                    #endif
+                    nob_da_append_many(&sb, "\x01\x00\x00\xd4", 4); // svc 0
+                    nob_da_append_many(&sb, "\xe0\x03\x04\xaa", 4); // mov x0, x4
+                    #else
                     nob_sb_append_cstr(&sb, "\x57");                            // push rdi
-                    nob_da_append_many(&sb, "\x48\xc7\xc0\x00\x00\x00\x00", 7); // mov rax, 0
+                    #ifdef __APPLE__
+                    nob_da_append_many(&sb, "\x48\xc7\xc0\x03\x00\x00\x02", 7); // mov rax, 2000003
+                    #else
+                    nob_da_append_many(&sb, "\x48\xc7\xc0\x00\x00\x00\x00", 7); // mov rax, 1
+                    #endif
                     nob_sb_append_cstr(&sb, "\x48\x89\xfe");                    // mov rsi, rdi
                     nob_da_append_many(&sb, "\x48\xc7\xc7\x00\x00\x00\x00", 7); // mov rdi, 0
                     nob_da_append_many(&sb, "\x48\xc7\xc2\x01\x00\x00\x00", 7); // mov rdx, 1
                     nob_sb_append_cstr(&sb, "\x0f\x05");                        // syscall
                     nob_sb_append_cstr(&sb, "\x5f");                            // pop rdi
+                    #endif
                 }
             } break;
 
             case OP_JUMP_IF_ZERO: {
+                #ifdef __aarch64__
+                nob_da_append_many(&sb, "\x08\x00\x40\x39", 4); // ldrb w8, [x0]
+                size_t operand_byte_addr = sb.count;
+                size_t src_byte_addr = sb.count;
+                nob_da_append_many(&sb, "\x08\x00\x00\x34", 4); // cbz w8, <loc>
+                #else
                 nob_sb_append_cstr(&sb, "\x8a\x07");     // mov al, byte [rdi]
                 nob_sb_append_cstr(&sb, "\x84\xc0");     // test al, al
                 nob_sb_append_cstr(&sb, "\x0f\x84");     // jz
                 size_t operand_byte_addr = sb.count;
                 nob_da_append_many(&sb, "\x00\x00\x00\x00", 4);
                 size_t src_byte_addr = sb.count;
+                #endif
 
                 Backpatch bp = {
                     .operand_byte_addr = operand_byte_addr,
@@ -233,12 +302,19 @@ bool jit_compile(Ops ops, Code *code)
             } break;
 
             case OP_JUMP_IF_NONZERO: {
+                #ifdef __aarch64__
+                nob_da_append_many(&sb, "\x08\x00\x40\x39", 4); // ldrb w8, [x0]
+                size_t operand_byte_addr = sb.count;
+                size_t src_byte_addr = sb.count;
+                nob_da_append_many(&sb, "\x08\x00\x00\x35", 4); // cbnz w8, <loc>
+                #else
                 nob_sb_append_cstr(&sb, "\x8a\x07");     // mov al, byte [rdi]
                 nob_sb_append_cstr(&sb, "\x84\xc0");     // test al, al
                 nob_sb_append_cstr(&sb, "\x0f\x85");     // jnz
                 size_t operand_byte_addr = sb.count;
                 nob_da_append_many(&sb, "\x00\x00\x00\x00", 4);
                 size_t src_byte_addr = sb.count;
+                #endif
 
                 Backpatch bp = {
                     .operand_byte_addr = operand_byte_addr,
@@ -259,20 +335,35 @@ bool jit_compile(Ops ops, Code *code)
         int32_t src_addr = bp.src_byte_addr;
         int32_t dst_addr = addrs.items[bp.dst_op_index];
         int32_t operand = dst_addr - src_addr;
+        #ifdef __aarch64__
+        assert((operand >= -0x40000 && operand <= 0x40000) && "TODO: branch too far");
+        *(uint32_t*) &sb.items[bp.operand_byte_addr] |= (uint32_t) ((operand / 4) & 0x7ffff) << 5;
+        #else
         memcpy(&sb.items[bp.operand_byte_addr], &operand, sizeof(operand));
+        #endif
     }
 
+    #ifdef __aarch64__
+    nob_da_append_many(&sb, "\xc0\x03\x5f\xd6", 4);
+    #else
     nob_sb_append_cstr(&sb, "\xC3");
+    #endif
 
     code->len = sb.count;
-    code->run = mmap(NULL, sb.count, PROT_EXEC | PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    // Fix: macOS on arm doesn't allow PROT_WRITE and PROT_EXEC at the same time
+    int map_flags = MAP_PRIVATE | MAP_ANONYMOUS;
+    #if defined(__APPLE__) && defined(__aarch64__)
+    map_flags |= MAP_JIT;
+    #endif
+    code->run = mmap(NULL, sb.count, PROT_READ | PROT_WRITE, map_flags, -1, 0);
     if (code->run == MAP_FAILED) {
         nob_log(NOB_ERROR, "Could not allocate executable memory: %s", strerror(errno));
         nob_return_defer(false);
     }
 
-    // TODO: switch the permissions to only-exec after finishing copying the code. See mprotect(2).
+    // Fix: Permissions not set when done copying, fixes PROT_WRITE and PROT_EXEC incompatibility
     memcpy(code->run, sb.items, code->len);
+    mprotect(code->run, sb.count, PROT_EXEC | PROT_READ);
 
 defer:
     if (!result) {
