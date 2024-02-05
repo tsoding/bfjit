@@ -224,7 +224,11 @@ bool jit_compile(Ops ops, Code *code)
                     nob_da_append_many(&sb, "\xe4\x03\x00\xaa", 4); // mov x4, x0
                     nob_da_append_many(&sb, "\x20\x00\x80\xd2", 4); // mov x0, 1
                     nob_da_append_many(&sb, "\x22\x00\x80\xd2", 4); // mov x2, 1
+                    #ifdef __APPLE__
                     nob_da_append_many(&sb, "\x90\x00\x80\xd2", 4); // mov x16, 4
+                    #else
+                    nob_da_append_many(&sb, "\x08\x08\x80\xd2", 4); // mov x8, 64
+                    #endif
                     nob_da_append_many(&sb, "\x01\x00\x00\xd4", 4); // svc 0
                     nob_da_append_many(&sb, "\xe0\x03\x04\xaa", 4); // mov x0, x4
                     #else
@@ -250,7 +254,11 @@ bool jit_compile(Ops ops, Code *code)
                     nob_da_append_many(&sb, "\xe4\x03\x00\xaa", 4); // mov x4, x0
                     nob_da_append_many(&sb, "\x20\x00\x80\xd2", 4); // mov x0, 1
                     nob_da_append_many(&sb, "\x22\x00\x80\xd2", 4); // mov x2, 0
+                    #ifdef __APPLE__
                     nob_da_append_many(&sb, "\x70\x00\x80\xd2", 4); // mov x16, 3
+                    #else
+                    nob_da_append_many(&sb, "\xe8\x07\x80\xd2", 4); // mov x8, 63
+                    #endif
                     nob_da_append_many(&sb, "\x01\x00\x00\xd4", 4); // svc 0
                     nob_da_append_many(&sb, "\xe0\x03\x04\xaa", 4); // mov x0, x4
                     #else
