@@ -3,12 +3,6 @@
 
 #include <sys/mman.h>
 
-// #ifdef __APPLE__
-// #ifdef __aarch64__
-// #error Can only compile for x86_64, add -arch x86_64 to the build command
-// #endif
-// #endif
-
 #define NOB_IMPLEMENTATION
 #include "nob.h"
 
